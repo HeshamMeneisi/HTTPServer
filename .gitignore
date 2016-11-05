@@ -1,3 +1,7 @@
+.dep.inc
+Makefile
+dist/*
+nbproject/*
 bin/*
 *.cbp
 *.depend

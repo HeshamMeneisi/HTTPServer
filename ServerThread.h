@@ -4,8 +4,9 @@
 #include <ctime>
 #include <pthread.h>
 #define BUFFERLENGTH 8192
-#define WORKDIR "/root/cdocs"
+#define WORKDIR "/root/sdocs"
 #define WDLEN 11
+#define term "\r\n\r\n"
 class ServerThread
 {
 private:

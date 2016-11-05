@@ -24,7 +24,20 @@ bool getExt(const char* path,char* ext)
     for(int j = 0; i<l; ext[j++] = path[++i]);
     return true;
 }
-const char* term = "\r\n\r\n";
+int getHeader(char *header, const char *buffer, int rd)
+{
+    int hl = 0;
+    int i = 0;
+    for(; hl<rd && strcmp(term,buffer+hl); hl++)
+    {
+        for(i = 0; i<4; i++)
+            if(term[i]!=buffer[hl+i]) break;
+        if(i == 4) break;
+        header[hl]=buffer[hl];
+    }
+    header[hl] = '\0';
+    return hl;
+}
 ///////////////////////////////////////////////////////////
 ServerThread::ServerThread(int socket)
 {
@@ -34,11 +47,13 @@ ServerThread::ServerThread(int socket)
 ServerThread::~ServerThread()
 {
 }
+// start serving in a separate thread
 void ServerThread::Serve()
 {
     pthread_create(&tid, NULL, run, this);
     start = time(NULL);
 }
+// terminate the thread and close the socket
 bool ServerThread::Terminate(bool force)
 {
     if(serving&&!force)return false;
@@ -46,32 +61,33 @@ bool ServerThread::Terminate(bool force)
     close(socket);
     return true;
 }
-
+// run in current thread
 void ServerThread::Run()
 {
-    int rd = 0;
+    int rd, hl;
     while(1)
     {
         serving = false;
         rd = read(socket,buffer,BUFFERLENGTH-1);
         if(rd <= 0)
         {
-            close(socket);
-            MarkFT();
-            break;
+            // client disconnected mysteriously
+            Terminate(true);
+            break; // precautionary
         }
+        // parse the header
         serving = true;
         char method[8], path[261], version[8], ext[5];
-        sprintf(path,"%s",WORKDIR);
-        int i=0;
-        for(; i<rd && strcmp(term,buffer+i); i++)header[i]=buffer[i];
-        header[i] = '\0';
+        strcpy(path,WORKDIR);
+        hl= getHeader(header,buffer, rd);
         sscanf(header,"%s %s %s",method,path+WDLEN,version);
-        getExt(path,ext);
-        if(!strlen(ext))strcat(path,"/index.html");
-        //cout << "m=" << method << endl << "p=" << path << endl << "v=" << version << endl;
+        // handle default file name
+        if(!getExt(path,ext))strcat(path,"/index.html");
+
+        // handle the request
         if(!strcmp("GET",method))
         {
+            // try to open the requested file
             FILE * file = fopen(path, "r");
             if(file)
             {
@@ -100,15 +116,40 @@ void ServerThread::Run()
         }
         else if(!strcmp("POST",method))
         {
-            FILE * file = fopen(path, "w+");
+            if(fopen(path,"r")>0)
+            {
+                sprintf(buffer,"%s\r\n\r\n", "HTTP/1.1 403 Forbidden");
+                send(socket, buffer, strlen(buffer), 0);
+                cout << "402 " << path << endl;
+                continue;
+            }
+            FILE *file = fopen(path, "w+");
             if(file)
             {
                 // send 200
                 sprintf(buffer,"%s\r\n\r\n", "HTTP/1.1 200 OK");
                 send(socket, buffer, strlen(buffer), 0);
+                cout << "200 " << path << endl;
+                // if client sent data after the header
+                if(rd-hl > 4)
+                    fwrite(buffer + hl + 4, sizeof(char), rd-hl-4, file);
+                rd = read(socket,buffer,BUFFERLENGTH-1);
+                while(rd > 0)
+                {
+                    fwrite(buffer, sizeof(char),rd, file);
+                    rd = read(socket,buffer,BUFFERLENGTH-1);
+                    // TODO: implement blocks or read content length
+                    if(rd < BUFFERLENGTH-1 || !strcmp(buffer-4, term))
+                        break;
+                }
+                fclose(file);
             }
-            fclose(file);
+            else
+            {
+                sprintf(buffer,"%s\r\n\r\n", "HTTP/1.1 500 Internal Server Error");
+                send(socket, buffer, strlen(buffer), 0);
+                cout << "500 " << path << endl;
+            }
         }
     }
-    MarkFT();
 }

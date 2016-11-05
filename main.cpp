@@ -7,7 +7,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <iostream>
-#include <ServerThread.h>
+#include "ServerThread.h"
 #include <pthread.h>
 #include<list>
 
@@ -128,11 +128,10 @@ int main(int argc, char *argv[])
     pthread_t server;
     // the first argument is always the work directory.
     if (argc < 2)
-    {
-        error("No port provided.");
-    }
-    // get port number from arguments
-    portno = atoi(argv[1]);
+        portno = 80;
+    else
+        // get port number from arguments
+        portno = atoi(argv[1]);
     // start the server thread
     pthread_create(&server, NULL, sfunc, NULL);
     string cmd;
